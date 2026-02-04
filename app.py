@@ -9,7 +9,7 @@ st.set_page_config(page_title="📊 Stock Scanner", layout="wide")
 st.title("📈 Smart Stock Screener")
 
 @st.cache_data
-Stocks = [
+STOCKS = [
     "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "GOOGL", "META",
     "AMZN", "NFLX", "INTC", "NVTS", "PLUG", "BAC", "JPM",
     "COIN", "SOFI", "RIVN", "NIO", "LCID", "SNAP"
