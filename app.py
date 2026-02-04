@@ -19,13 +19,35 @@ st.title("📊 Stock Signals Dashboard")
 @st.cache_data(ttl=600)
 def analyze_stock(symbol):
     df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-if df.empty:
+
+    if df.empty:
+        return {
+            "Stock": symbol,
+            "Price": "—",
+            "RSI": "—",
+            "SMA20": "—",
+            "Signal": "NO DATA"
+        }
+
+    close = df["Close"].squeeze()
+
+    rsi = RSIIndicator(close).rsi().iloc[-1]
+    sma = SMAIndicator(close, 20).sma_indicator().iloc[-1]
+    price = close.iloc[-1]
+
+    if rsi < 30 and price > sma:
+        signal = "BUY"
+    elif rsi > 70 and price < sma:
+        signal = "SELL"
+    else:
+        signal = "HOLD"
+
     return {
         "Stock": symbol,
-        "Price": "—",
-        "RSI": "—",
-        "SMA20": "—",
-        "Signal": "NO DATA"
+        "Price": round(float(price), 2),
+        "RSI": round(float(rsi), 2),
+        "SMA20": round(float(sma), 2),
+        "Signal": signal
     }
     
     close = df["Close"].squeeze()
