@@ -19,10 +19,15 @@ st.title("📊 Stock Signals Dashboard")
 @st.cache_data(ttl=600)
 def analyze_stock(symbol):
     df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-
-    if df.empty:
-        return None
-
+if df.empty:
+    return {
+        "Stock": symbol,
+        "Price": "—",
+        "RSI": "—",
+        "SMA20": "—",
+        "Signal": "NO DATA"
+    }
+    
     close = df["Close"].squeeze()
 
     rsi = RSIIndicator(close).rsi().iloc[-1]
