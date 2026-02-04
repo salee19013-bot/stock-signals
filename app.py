@@ -9,13 +9,13 @@ st.set_page_config(page_title="📊 Stock Scanner", layout="wide")
 st.title("📈 Smart Stock Screener")
 
 @st.cache_data
-STOCKS = [
+Stocks = [
     "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "GOOGL", "META",
     "AMZN", "NFLX", "INTC", "NVTS", "PLUG", "BAC", "JPM",
     "COIN", "SOFI", "RIVN", "NIO", "LCID", "SNAP"
 ]
 
-stocks = STOCKS
+Stocks = STOCKS
 
 selected = st.selectbox("اختر سهم للتحليل التفصيلي", stocks)
 
