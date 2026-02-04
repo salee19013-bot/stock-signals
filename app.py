@@ -9,11 +9,13 @@ st.set_page_config(page_title="📊 Stock Scanner", layout="wide")
 st.title("📈 Smart Stock Screener")
 
 @st.cache_data
-def load_stocks():
-    url = "https://datahub.io/core/s-and-p-500-companies/r/constituents_symbols.txt"
-    return pd.read_csv(url, header=None)[0].tolist()
+STOCKS = [
+    "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "GOOGL", "META",
+    "AMZN", "NFLX", "INTC", "NVTS", "PLUG", "BAC", "JPM",
+    "COIN", "SOFI", "RIVN", "NIO", "LCID", "SNAP"
+]
 
-stocks = load_stocks()
+stocks = STOCKS
 
 selected = st.selectbox("اختر سهم للتحليل التفصيلي", stocks)
 
