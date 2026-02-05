@@ -42,10 +42,9 @@ ALL_STOCKS = [
     "PLUG","NVTS","SOFI","COIN","INTC","BABA","RIVN","UBER","PYPL","SNAP"
 ]
 
-selected_stocks = st.multiselect(
-    "📌 اختر الأسهم",
-    ALL_STOCKS,
-    default=ALL_STOCKS[:7]
+manual = st.text_input("✍️ أدخل رموز الأسهم (مثال: AAPL,TSLA,PLUG)")
+if manual:
+    selected_stocks = [s.strip().upper() for s in manual.split(",")]
 )
 
 # ================== دوال مساعدة ==================
