@@ -6,8 +6,8 @@ from ta.trend import SMAIndicator
 import plotly.graph_objects as go
 
 # إعداد الصفحة
-st.set_page_config(page_title="Stock Signals", layout="wide")
-st.title("📊 Stock Signals Dashboard")
+st.set_page_config(page_title="إشارات الأسهم", layout="wide")
+st.title("📊 إشارات الأسهم")
 
 # قائمة الأسهم
 STOCKS = [
@@ -16,7 +16,22 @@ STOCKS = [
     "COIN", "SOFI", "RIVN", "NIO", "LCID", "SNAP"
 ]
 
-# ===== Sidebar =====
+# ===== الترجمة =====
+SIGNAL_AR = {
+    "BUY": "🟢 شراء",
+    "SELL": "🔴 بيع",
+    "HOLD": "🟡 انتظار",
+    "NO DATA": "⚪ لا توجد بيانات"
+}
+
+PREDICTION_AR = {
+    "📈 Possible Rise": "📈 احتمال صعود",
+    "📉 Possible Drop": "📉 احتمال هبوط",
+    "➡️ Sideways": "➡️ تذبذب / استقرار",
+    "—": "—"
+}
+
+# ===== الشريط الجانبي =====
 st.sidebar.header("⚙️ الإعدادات")
 
 selected_stocks = st.sidebar.multiselect(
@@ -27,7 +42,7 @@ selected_stocks = st.sidebar.multiselect(
 
 signal_filter = st.sidebar.selectbox(
     "فلترة الإشارات",
-    ["ALL", "BUY", "SELL", "HOLD"]
+    ["الكل", "شراء", "بيع", "انتظار"]
 )
 
 # ===== أخبار السهم =====
@@ -39,7 +54,7 @@ def get_news(symbol):
             return news[0]["title"]
     except:
         pass
-    return "No recent news"
+    return "لا توجد أخبار حديثة"
 
 # ===== تحليل السهم =====
 @st.cache_data(ttl=600)
@@ -48,13 +63,14 @@ def analyze_stock(symbol):
 
     if df.empty or "Close" not in df:
         return {
-            "Stock": symbol,
-            "Price": None,
+            "السهم": symbol,
+            "السعر": None,
             "RSI": None,
-            "SMA20": None,
-            "Signal": "NO DATA",
-            "Prediction": "—",
-            "News": "—"
+            "حالة RSI": "—",
+            "المتوسط 20": None,
+            "الإشارة": SIGNAL_AR["NO DATA"],
+            "التوقع": "—",
+            "الخبر": "—"
         }
 
     close = df["Close"].squeeze()
@@ -72,64 +88,68 @@ def analyze_stock(symbol):
 
     if rsi < 30:
         prediction = "📈 Possible Rise"
+        rsi_status = "تشبع بيعي"
     elif rsi > 70:
         prediction = "📉 Possible Drop"
+        rsi_status = "تشبع شرائي"
     else:
         prediction = "➡️ Sideways"
+        rsi_status = "منطقة طبيعية"
 
     return {
-        "Stock": symbol,
-        "Price": round(float(price), 2),
+        "السهم": symbol,
+        "السعر": round(float(price), 2),
         "RSI": round(float(rsi), 2),
-        "SMA20": round(float(sma), 2),
-        "Signal": signal,
-        "Prediction": prediction,
-        "News": get_news(symbol)
+        "حالة RSI": rsi_status,
+        "المتوسط 20": round(float(sma), 2),
+        "الإشارة": SIGNAL_AR.get(signal, signal),
+        "التوقع": PREDICTION_AR.get(prediction, prediction),
+        "الخبر": get_news(symbol)
     }
 
 # ===== تشغيل التحليل =====
 results = []
 
-with st.spinner("⏳ Analyzing stocks..."):
+with st.spinner("⏳ جارٍ تحليل الأسهم..."):
     for stock in selected_stocks:
         results.append(analyze_stock(stock))
 
 df_results = pd.DataFrame(results)
 
-# فلترة الإشارة
-if signal_filter != "ALL":
-    df_results = df_results[df_results["Signal"] == signal_filter]
+# ===== فلترة الإشارات =====
+if signal_filter != "الكل":
+    df_results = df_results[df_results["الإشارة"].str.contains(signal_filter)]
 
-# ===== جدول النتائج =====
-st.subheader("📋 Stock Analysis")
+# ===== عرض الجدول =====
+st.subheader("📋 نتائج التحليل")
 st.dataframe(df_results, use_container_width=True)
 
 # ===== إبراز الإشارات =====
-st.subheader("📌 Trading Signals")
+st.subheader("📌 التوصيات")
 
 for _, row in df_results.iterrows():
-    if row["Signal"] == "BUY":
-        st.success(f"🟢 {row['Stock']} → BUY | {row['Prediction']}")
-    elif row["Signal"] == "SELL":
-        st.error(f"🔴 {row['Stock']} → SELL | {row['Prediction']}")
-    elif row["Signal"] == "HOLD":
-        st.info(f"🟡 {row['Stock']} → HOLD | {row['Prediction']}")
+    if "شراء" in row["الإشارة"]:
+        st.success(f"🟢 {row['السهم']} → شراء | {row['التوقع']}")
+    elif "بيع" in row["الإشارة"]:
+        st.error(f"🔴 {row['السهم']} → بيع | {row['التوقع']}")
+    elif "انتظار" in row["الإشارة"]:
+        st.info(f"🟡 {row['السهم']} → انتظار | {row['التوقع']}")
     else:
-        st.warning(f"⚪ {row['Stock']} → NO DATA")
+        st.warning(f"⚪ {row['السهم']} → لا توجد بيانات")
 
 # ===== رسم RSI =====
-st.subheader("📈 RSI Chart")
+st.subheader("📈 مؤشر RSI")
 
 if not df_results.empty:
     fig = go.Figure()
     fig.add_bar(
-        x=df_results["Stock"],
+        x=df_results["السهم"],
         y=df_results["RSI"],
-        text=df_results["Signal"],
+        text=df_results["الإشارة"]
     )
     fig.update_layout(
-        title="RSI per Stock",
+        title="مؤشر القوة النسبية RSI",
         yaxis_title="RSI",
-        xaxis_title="Stock"
+        xaxis_title="السهم"
     )
     st.plotly_chart(fig, use_container_width=True)
