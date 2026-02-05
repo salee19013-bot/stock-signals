@@ -5,24 +5,50 @@ from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator
 from ta.volatility import AverageTrueRange
 
+# ================== إعداد الصفحة ==================
 st.set_page_config(page_title="التحليل الذكي للأسهم", layout="wide")
 st.title("🧠 منصة التحليل الذكي للأسهم")
 
-# ===== الإعدادات =====
-CAPITAL = st.sidebar.number_input("💰 رأس المال", 500, 1_000_000, 5000, 500)
+# ================== سجل الصفقات ==================
+if "trades" not in st.session_state:
+    st.session_state.trades = []
+
+# ================== الإعدادات ==================
+CAPITAL = st.sidebar.number_input(
+    "💰 رأس المال", min_value=500, max_value=1_000_000, value=5000, step=500
+)
+
 RISK = st.sidebar.selectbox("⚠️ نسبة المخاطرة", ["منخفضة", "متوسطة", "عالية"])
 RISK_FACTOR = {"منخفضة": 0.05, "متوسطة": 0.1, "عالية": 0.2}[RISK]
 
-# ===== الأسهم =====
-STOCKS = [
-    "AAPL","NVDA","TSLA","AMD","MSFT","GOOGL","META",
-    "AMZN","NFLX","PLUG","NVTS","SOFI","COIN","INTC",
-    "BABA","RIVN","UBER","PYPL","SNAP"
+TIMEFRAME_LABEL = st.sidebar.selectbox(
+    "⏱️ الإطار الزمني",
+    ["تحليل يومي", "مضاربة 15 دقيقة", "سكالبينغ 5 دقائق"]
+)
+
+if TIMEFRAME_LABEL == "تحليل يومي":
+    INTERVAL = "1d"
+    PERIOD = "3mo"
+elif TIMEFRAME_LABEL == "مضاربة 15 دقيقة":
+    INTERVAL = "15m"
+    PERIOD = "7d"
+else:
+    INTERVAL = "5m"
+    PERIOD = "7d"
+
+# ================== الأسهم ==================
+ALL_STOCKS = [
+    "AAPL","NVDA","TSLA","AMD","MSFT","GOOGL","META","AMZN","NFLX",
+    "PLUG","NVTS","SOFI","COIN","INTC","BABA","RIVN","UBER","PYPL","SNAP"
 ]
 
-selected = st.multiselect("📌 اختر الأسهم", STOCKS, default=STOCKS[:7])
+selected_stocks = st.multiselect(
+    "📌 اختر الأسهم",
+    ALL_STOCKS,
+    default=ALL_STOCKS[:7]
+)
 
-# ===== ترجمة الإشارات =====
+# ================== دوال مساعدة ==================
 def signal_ar(score):
     if score >= 75:
         return "🟢 شراء قوي"
@@ -33,7 +59,7 @@ def signal_ar(score):
     else:
         return "🔴 بيع"
 
-def trend_ar(score):
+def prediction_ar(score):
     if score >= 75:
         return "📈 صعود قوي"
     elif score >= 60:
@@ -51,72 +77,111 @@ def rsi_state(rsi):
     else:
         return "طبيعي"
 
-# ===== التحليل =====
-@st.cache_data(ttl=600)
-def analyze(stock):
-    df = yf.download(stock, period="3mo", interval="1d", progress=False)
-    if df.empty:
+def entry_type(price, high20, rsi):
+    if price > high20 and rsi > 55:
+        return "🔼 دخول كسر"
+    elif rsi < 30:
+        return "🔁 دخول ارتداد"
+    else:
+        return "—"
+
+# ================== التحليل ==================
+@st.cache_data(ttl=300)
+def analyze_stock(stock):
+    df = yf.download(stock, period=PERIOD, interval=INTERVAL, progress=False)
+
+    if df.empty or len(df) < 30:
         return None
 
     close = df["Close"].squeeze()
     high = df["High"].squeeze()
     low = df["Low"].squeeze()
 
-    price = close.iloc[-1]
-    rsi = RSIIndicator(close).rsi().iloc[-1]
-    sma = SMAIndicator(close, 20).sma_indicator().iloc[-1]
-    atr = AverageTrueRange(high, low, close).average_true_range().iloc[-1]
+    price = float(close.iloc[-1])
+    rsi = float(RSIIndicator(close).rsi().iloc[-1])
+    sma = float(SMAIndicator(close, 20).sma_indicator().iloc[-1])
+    atr = float(AverageTrueRange(high, low, close).average_true_range().iloc[-1])
+
+    high20 = float(df["High"].rolling(20).max().iloc[-1])
+    entry = entry_type(price, high20, rsi)
 
     # ===== ذكاء التقييم =====
     score = 50
     score += 25 if rsi < 30 else -15 if rsi > 70 else 0
     score += 15 if price > sma else -10
-    score = max(0, min(100, score))
+
+    if INTERVAL in ["5m", "15m"]:
+        score *= 0.9
+
+    score = int(max(0, min(100, score)))
 
     # ===== الأهداف =====
-    t1 = price + atr
-    t2 = price + atr * 2
-    t3 = price + atr * 3
-    sl = price - atr * 1.5
+    target1 = price + atr
+    target2 = price + atr * 2
+    target3 = price + atr * 3
+    stop_loss = price - atr * 1.5
 
-    # ===== الكمية =====
     allocation = CAPITAL * RISK_FACTOR * (score / 100)
-    qty = int(allocation / price) if score >= 60 else 0
+    quantity = int(allocation / price) if score >= 60 else 0
 
     return {
         "السهم": stock,
         "السعر": round(price, 2),
         "RSI": round(rsi, 2),
         "حالة RSI": rsi_state(rsi),
+        "📍 نوع الدخول": entry,
         "التقييم %": score,
         "الإشارة": signal_ar(score),
-        "التوقع": trend_ar(score),
-        "🎯 هدف 1": round(t1, 2),
-        "🎯 هدف 2": round(t2, 2),
-        "🎯 هدف 3": round(t3, 2),
-        "🛑 وقف الخسارة": round(sl, 2),
-        "📦 الكمية المقترحة": qty
+        "التوقع": prediction_ar(score),
+        "🎯 هدف 1": round(target1, 2),
+        "🎯 هدف 2": round(target2, 2),
+        "🎯 هدف 3": round(target3, 2),
+        "🛑 وقف الخسارة": round(stop_loss, 2),
+        "📦 الكمية المقترحة": quantity
     }
 
-# ===== تشغيل =====
-data = []
-for s in selected:
-    r = analyze(s)
-    if r:
-        data.append(r)
+# ================== التشغيل ==================
+results = []
+for stock in selected_stocks:
+    res = analyze_stock(stock)
+    if res:
+        results.append(res)
 
-df = pd.DataFrame(data)
+df_results = pd.DataFrame(results)
 
 st.subheader("📊 جدول التحليل الذكي")
-st.dataframe(df, use_container_width=True)
+st.dataframe(df_results, use_container_width=True)
 
-# ===== تنبيهات =====
-st.subheader("🚨 تنبيهات ذكية")
-for _, row in df.iterrows():
+# ================== التنبيهات ==================
+st.subheader("🚨 إشارات فورية")
+for _, row in df_results.iterrows():
     if "شراء" in row["الإشارة"]:
         st.success(
-            f"{row['السهم']} | {row['الإشارة']} | "
+            f"{row['السهم']} | {row['الإشارة']} | {row['📍 نوع الدخول']} | "
             f"هدف: {row['🎯 هدف 2']} | وقف: {row['🛑 وقف الخسارة']}"
         )
     elif "بيع" in row["الإشارة"]:
         st.error(f"{row['السهم']} | {row['الإشارة']} | خطر مرتفع")
+    else:
+        st.info(f"{row['السهم']} | {row['الإشارة']} | {row['التوقع']}")
+
+# ================== سجل الصفقات ==================
+st.subheader("🧾 سجل الصفقات")
+
+for _, row in df_results.iterrows():
+    if "شراء" in row["الإشارة"]:
+        if st.button(f"➕ إضافة صفقة {row['السهم']}"):
+            st.session_state.trades.append({
+                "السهم": row["السهم"],
+                "سعر الدخول": row["السعر"],
+                "الكمية": row["📦 الكمية المقترحة"],
+                "الهدف": row["🎯 هدف 2"],
+                "وقف الخسارة": row["🛑 وقف الخسارة"],
+                "التقييم": row["التقييم %"]
+            })
+
+if st.session_state.trades:
+    trades_df = pd.DataFrame(st.session_state.trades)
+    st.dataframe(trades_df, use_container_width=True)
+else:
+    st.info("لا توجد صفقات مسجلة حتى الآن")
