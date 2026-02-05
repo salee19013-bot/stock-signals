@@ -3,153 +3,120 @@ import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator
-import plotly.graph_objects as go
+from ta.volatility import AverageTrueRange
 
-# إعداد الصفحة
-st.set_page_config(page_title="إشارات الأسهم", layout="wide")
-st.title("📊 إشارات الأسهم")
+st.set_page_config(page_title="التحليل الذكي للأسهم", layout="wide")
+st.title("🧠 منصة التحليل الذكي للأسهم")
 
-# قائمة الأسهم
+# ===== الإعدادات =====
+CAPITAL = st.sidebar.number_input("💰 رأس المال", 500, 1_000_000, 5000, 500)
+RISK = st.sidebar.selectbox("⚠️ نسبة المخاطرة", ["منخفضة", "متوسطة", "عالية"])
+RISK_FACTOR = {"منخفضة": 0.05, "متوسطة": 0.1, "عالية": 0.2}[RISK]
+
+# ===== الأسهم =====
 STOCKS = [
-    "AAPL", "NVDA", "TSLA", "AMD", "MSFT", "GOOGL", "META",
-    "AMZN", "NFLX", "INTC", "NVTS", "PLUG", "BAC", "JPM",
-    "COIN", "SOFI", "RIVN", "NIO", "LCID", "SNAP"
+    "AAPL","NVDA","TSLA","AMD","MSFT","GOOGL","META",
+    "AMZN","NFLX","PLUG","NVTS","SOFI","COIN","INTC",
+    "BABA","RIVN","UBER","PYPL","SNAP"
 ]
 
-# ===== الترجمة =====
-SIGNAL_AR = {
-    "BUY": "🟢 شراء",
-    "SELL": "🔴 بيع",
-    "HOLD": "🟡 انتظار",
-    "NO DATA": "⚪ لا توجد بيانات"
-}
+selected = st.multiselect("📌 اختر الأسهم", STOCKS, default=STOCKS[:7])
 
-PREDICTION_AR = {
-    "📈 Possible Rise": "📈 احتمال صعود",
-    "📉 Possible Drop": "📉 احتمال هبوط",
-    "➡️ Sideways": "➡️ تذبذب / استقرار",
-    "—": "—"
-}
+# ===== ترجمة الإشارات =====
+def signal_ar(score):
+    if score >= 75:
+        return "🟢 شراء قوي"
+    elif score >= 60:
+        return "🟢 شراء"
+    elif score >= 45:
+        return "🟡 انتظار"
+    else:
+        return "🔴 بيع"
 
-# ===== الشريط الجانبي =====
-st.sidebar.header("⚙️ الإعدادات")
+def trend_ar(score):
+    if score >= 75:
+        return "📈 صعود قوي"
+    elif score >= 60:
+        return "📈 صعود محتمل"
+    elif score >= 45:
+        return "➡️ تذبذب"
+    else:
+        return "📉 هبوط محتمل"
 
-selected_stocks = st.sidebar.multiselect(
-    "اختر الأسهم",
-    STOCKS,
-    default=STOCKS[:5]
-)
+def rsi_state(rsi):
+    if rsi < 30:
+        return "تشبع بيعي"
+    elif rsi > 70:
+        return "تشبع شرائي"
+    else:
+        return "طبيعي"
 
-signal_filter = st.sidebar.selectbox(
-    "فلترة الإشارات",
-    ["الكل", "شراء", "بيع", "انتظار"]
-)
-
-# ===== أخبار السهم =====
-def get_news(symbol):
-    try:
-        ticker = yf.Ticker(symbol)
-        news = ticker.news
-        if news:
-            return news[0]["title"]
-    except:
-        pass
-    return "لا توجد أخبار حديثة"
-
-# ===== تحليل السهم =====
+# ===== التحليل =====
 @st.cache_data(ttl=600)
-def analyze_stock(symbol):
-    df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-
-    if df.empty or "Close" not in df:
-        return {
-            "السهم": symbol,
-            "السعر": None,
-            "RSI": None,
-            "حالة RSI": "—",
-            "المتوسط 20": None,
-            "الإشارة": SIGNAL_AR["NO DATA"],
-            "التوقع": "—",
-            "الخبر": "—"
-        }
+def analyze(stock):
+    df = yf.download(stock, period="3mo", interval="1d", progress=False)
+    if df.empty:
+        return None
 
     close = df["Close"].squeeze()
+    high = df["High"].squeeze()
+    low = df["Low"].squeeze()
 
+    price = close.iloc[-1]
     rsi = RSIIndicator(close).rsi().iloc[-1]
     sma = SMAIndicator(close, 20).sma_indicator().iloc[-1]
-    price = close.iloc[-1]
+    atr = AverageTrueRange(high, low, close).average_true_range().iloc[-1]
 
-    if rsi < 30 and price > sma:
-        signal = "BUY"
-    elif rsi > 70 and price < sma:
-        signal = "SELL"
-    else:
-        signal = "HOLD"
+    # ===== ذكاء التقييم =====
+    score = 50
+    score += 25 if rsi < 30 else -15 if rsi > 70 else 0
+    score += 15 if price > sma else -10
+    score = max(0, min(100, score))
 
-    if rsi < 30:
-        prediction = "📈 Possible Rise"
-        rsi_status = "تشبع بيعي"
-    elif rsi > 70:
-        prediction = "📉 Possible Drop"
-        rsi_status = "تشبع شرائي"
-    else:
-        prediction = "➡️ Sideways"
-        rsi_status = "منطقة طبيعية"
+    # ===== الأهداف =====
+    t1 = price + atr
+    t2 = price + atr * 2
+    t3 = price + atr * 3
+    sl = price - atr * 1.5
+
+    # ===== الكمية =====
+    allocation = CAPITAL * RISK_FACTOR * (score / 100)
+    qty = int(allocation / price) if score >= 60 else 0
 
     return {
-        "السهم": symbol,
-        "السعر": round(float(price), 2),
-        "RSI": round(float(rsi), 2),
-        "حالة RSI": rsi_status,
-        "المتوسط 20": round(float(sma), 2),
-        "الإشارة": SIGNAL_AR.get(signal, signal),
-        "التوقع": PREDICTION_AR.get(prediction, prediction),
-        "الخبر": get_news(symbol)
+        "السهم": stock,
+        "السعر": round(price, 2),
+        "RSI": round(rsi, 2),
+        "حالة RSI": rsi_state(rsi),
+        "التقييم %": score,
+        "الإشارة": signal_ar(score),
+        "التوقع": trend_ar(score),
+        "🎯 هدف 1": round(t1, 2),
+        "🎯 هدف 2": round(t2, 2),
+        "🎯 هدف 3": round(t3, 2),
+        "🛑 وقف الخسارة": round(sl, 2),
+        "📦 الكمية المقترحة": qty
     }
 
-# ===== تشغيل التحليل =====
-results = []
+# ===== تشغيل =====
+data = []
+for s in selected:
+    r = analyze(s)
+    if r:
+        data.append(r)
 
-with st.spinner("⏳ جارٍ تحليل الأسهم..."):
-    for stock in selected_stocks:
-        results.append(analyze_stock(stock))
+df = pd.DataFrame(data)
 
-df_results = pd.DataFrame(results)
+st.subheader("📊 جدول التحليل الذكي")
+st.dataframe(df, use_container_width=True)
 
-# ===== فلترة الإشارات =====
-if signal_filter != "الكل":
-    df_results = df_results[df_results["الإشارة"].str.contains(signal_filter)]
-
-# ===== عرض الجدول =====
-st.subheader("📋 نتائج التحليل")
-st.dataframe(df_results, use_container_width=True)
-
-# ===== إبراز الإشارات =====
-st.subheader("📌 التوصيات")
-
-for _, row in df_results.iterrows():
+# ===== تنبيهات =====
+st.subheader("🚨 تنبيهات ذكية")
+for _, row in df.iterrows():
     if "شراء" in row["الإشارة"]:
-        st.success(f"🟢 {row['السهم']} → شراء | {row['التوقع']}")
+        st.success(
+            f"{row['السهم']} | {row['الإشارة']} | "
+            f"هدف: {row['🎯 هدف 2']} | وقف: {row['🛑 وقف الخسارة']}"
+        )
     elif "بيع" in row["الإشارة"]:
-        st.error(f"🔴 {row['السهم']} → بيع | {row['التوقع']}")
-    elif "انتظار" in row["الإشارة"]:
-        st.info(f"🟡 {row['السهم']} → انتظار | {row['التوقع']}")
-    else:
-        st.warning(f"⚪ {row['السهم']} → لا توجد بيانات")
-
-# ===== رسم RSI =====
-st.subheader("📈 مؤشر RSI")
-
-if not df_results.empty:
-    fig = go.Figure()
-    fig.add_bar(
-        x=df_results["السهم"],
-        y=df_results["RSI"],
-        text=df_results["الإشارة"]
-    )
-    fig.update_layout(
-        title="مؤشر القوة النسبية RSI",
-        yaxis_title="RSI",
-        xaxis_title="السهم"
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        st.error(f"{row['السهم']} | {row['الإشارة']} | خطر مرتفع")
