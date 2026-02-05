@@ -45,7 +45,6 @@ ALL_STOCKS = [
 manual = st.text_input("✍️ أدخل رموز الأسهم (مثال: AAPL,TSLA,PLUG)")
 if manual:
     selected_stocks = [s.strip().upper() for s in manual.split(",")]
-)
 
 # ================== دوال مساعدة ==================
 def signal_ar(score):
