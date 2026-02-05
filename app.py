@@ -4,14 +4,23 @@ import pandas as pd
 from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator
 from ta.volatility import AverageTrueRange
+import time
 
 # ================== إعداد الصفحة ==================
 st.set_page_config(page_title="التحليل الذكي للأسهم", layout="wide")
-st.title("🧠 منصة التحليل الذكي للأسهم")
+st.title("🧠 منصة التحليل الذكي للأسهم (تحديث فوري)")
 
-# ================== سجل الصفقات ==================
-if "trades" not in st.session_state:
-    st.session_state.trades = []
+# ================== تحديث تلقائي ==================
+REFRESH = st.sidebar.slider("🔄 التحديث التلقائي (ثانية)", 15, 300, 60, 15)
+
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+if time.time() - st.session_state.last_refresh >= REFRESH:
+    st.session_state.last_refresh = time.time()
+    st.rerun()
+
+st.caption(f"آخر تحديث: {time.strftime('%H:%M:%S')}")
 
 # ================== الإعدادات ==================
 CAPITAL = st.sidebar.number_input(
@@ -36,17 +45,15 @@ else:
     INTERVAL = "5m"
     PERIOD = "7d"
 
-# ================== الأسهم ==================
-ALL_STOCKS = [
-    "AAPL","NVDA","TSLA","AMD","MSFT","GOOGL","META","AMZN","NFLX",
-    "PLUG","NVTS","SOFI","COIN","INTC","BABA","RIVN","UBER","PYPL","SNAP"
-]
+# ================== إدخال الأسهم ==================
+manual = st.text_input(
+    "✍️ أدخل رموز الأسهم (مثال: AAPL,TSLA,NVDA,PLUG)",
+    value="AAPL,NVDA,TSLA"
+)
 
-manual = st.text_input("✍️ أدخل رموز الأسهم (مثال: AAPL,TSLA,PLUG)")
-if manual:
-    selected_stocks = [s.strip().upper() for s in manual.split(",")]
+STOCKS = [s.strip().upper() for s in manual.split(",") if s.strip()]
 
-# ================== دوال مساعدة ==================
+# ================== دوال ذكية ==================
 def signal_ar(score):
     if score >= 75:
         return "🟢 شراء قوي"
@@ -84,7 +91,7 @@ def entry_type(price, high20, rsi):
         return "—"
 
 # ================== التحليل ==================
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)
 def analyze_stock(stock):
     df = yf.download(stock, period=PERIOD, interval=INTERVAL, progress=False)
 
@@ -99,11 +106,10 @@ def analyze_stock(stock):
     rsi = float(RSIIndicator(close).rsi().iloc[-1])
     sma = float(SMAIndicator(close, 20).sma_indicator().iloc[-1])
     atr = float(AverageTrueRange(high, low, close).average_true_range().iloc[-1])
-
     high20 = float(df["High"].rolling(20).max().iloc[-1])
+
     entry = entry_type(price, high20, rsi)
 
-    # ===== ذكاء التقييم =====
     score = 50
     score += 25 if rsi < 30 else -15 if rsi > 70 else 0
     score += 15 if price > sma else -10
@@ -113,73 +119,48 @@ def analyze_stock(stock):
 
     score = int(max(0, min(100, score)))
 
-    # ===== الأهداف =====
     target1 = price + atr
     target2 = price + atr * 2
-    target3 = price + atr * 3
     stop_loss = price - atr * 1.5
 
     allocation = CAPITAL * RISK_FACTOR * (score / 100)
-    quantity = int(allocation / price) if score >= 60 else 0
+    qty = int(allocation / price) if score >= 60 else 0
 
     return {
         "السهم": stock,
         "السعر": round(price, 2),
         "RSI": round(rsi, 2),
         "حالة RSI": rsi_state(rsi),
-        "📍 نوع الدخول": entry,
+        "📍 الدخول": entry,
         "التقييم %": score,
         "الإشارة": signal_ar(score),
         "التوقع": prediction_ar(score),
-        "🎯 هدف 1": round(target1, 2),
-        "🎯 هدف 2": round(target2, 2),
-        "🎯 هدف 3": round(target3, 2),
-        "🛑 وقف الخسارة": round(stop_loss, 2),
-        "📦 الكمية المقترحة": quantity
+        "🎯 هدف": round(target2, 2),
+        "🛑 وقف": round(stop_loss, 2),
+        "📦 الكمية": qty
     }
 
 # ================== التشغيل ==================
 results = []
-for stock in selected_stocks:
-    res = analyze_stock(stock)
-    if res:
-        results.append(res)
+for s in STOCKS:
+    r = analyze_stock(s)
+    if r:
+        results.append(r)
 
-df_results = pd.DataFrame(results)
+df = pd.DataFrame(results)
 
-st.subheader("📊 جدول التحليل الذكي")
-st.dataframe(df_results, use_container_width=True)
+st.subheader("📊 النتائج (تحديث فوري)")
+st.dataframe(df, use_container_width=True)
 
-# ================== التنبيهات ==================
-st.subheader("🚨 إشارات فورية")
-for _, row in df_results.iterrows():
+# ================== إشارات ==================
+st.subheader("🚨 إشارات مباشرة")
+for _, row in df.iterrows():
     if "شراء" in row["الإشارة"]:
         st.success(
-            f"{row['السهم']} | {row['الإشارة']} | {row['📍 نوع الدخول']} | "
-            f"هدف: {row['🎯 هدف 2']} | وقف: {row['🛑 وقف الخسارة']}"
+            f"{row['السهم']} | {row['الإشارة']} | {row['📍 الدخول']} | "
+            f"هدف: {row['🎯 هدف']} | وقف: {row['🛑 وقف']}"
         )
     elif "بيع" in row["الإشارة"]:
-        st.error(f"{row['السهم']} | {row['الإشارة']} | خطر مرتفع")
+        st.error(f"{row['السهم']} | {row['الإشارة']} | خطر")
     else:
         st.info(f"{row['السهم']} | {row['الإشارة']} | {row['التوقع']}")
-
-# ================== سجل الصفقات ==================
-st.subheader("🧾 سجل الصفقات")
-
-for _, row in df_results.iterrows():
-    if "شراء" in row["الإشارة"]:
-        if st.button(f"➕ إضافة صفقة {row['السهم']}"):
-            st.session_state.trades.append({
-                "السهم": row["السهم"],
-                "سعر الدخول": row["السعر"],
-                "الكمية": row["📦 الكمية المقترحة"],
-                "الهدف": row["🎯 هدف 2"],
-                "وقف الخسارة": row["🛑 وقف الخسارة"],
-                "التقييم": row["التقييم %"]
-            })
-
-if st.session_state.trades:
-    trades_df = pd.DataFrame(st.session_state.trades)
-    st.dataframe(trades_df, use_container_width=True)
-else:
-    st.info("لا توجد صفقات مسجلة حتى الآن")
