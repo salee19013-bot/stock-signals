@@ -1,166 +1,88 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import time
 from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator
-from ta.volatility import AverageTrueRange
-import time
 
-# ================== إعداد الصفحة ==================
-st.set_page_config(page_title="التحليل الذكي للأسهم", layout="wide")
-st.title("🧠 منصة التحليل الذكي للأسهم (تحديث فوري)")
+st.set_page_config(page_title="إشارات الأسهم", layout="wide")
 
 # ================== تحديث تلقائي ==================
-REFRESH = st.sidebar.slider("🔄 التحديث التلقائي (ثانية)", 15, 300, 60, 15)
-
 if "last_refresh" not in st.session_state:
     st.session_state.last_refresh = time.time()
 
-if time.time() - st.session_state.last_refresh >= REFRESH:
+AUTO_REFRESH_SECONDS = 60  # تحديث كل دقيقة
+
+if time.time() - st.session_state.last_refresh > AUTO_REFRESH_SECONDS:
     st.session_state.last_refresh = time.time()
-    st.rerun()
+    st.experimental_rerun()
 
-st.caption(f"آخر تحديث: {time.strftime('%H:%M:%S')}")
+# زر تحديث يدوي
+st.button("🔄 تحديث الآن", on_click=lambda: st.experimental_rerun())
 
-# ================== الإعدادات ==================
-CAPITAL = st.sidebar.number_input(
-    "💰 رأس المال", min_value=500, max_value=1_000_000, value=5000, step=500
-)
-
-RISK = st.sidebar.selectbox("⚠️ نسبة المخاطرة", ["منخفضة", "متوسطة", "عالية"])
-RISK_FACTOR = {"منخفضة": 0.05, "متوسطة": 0.1, "عالية": 0.2}[RISK]
-
-TIMEFRAME_LABEL = st.sidebar.selectbox(
-    "⏱️ الإطار الزمني",
-    ["تحليل يومي", "مضاربة 15 دقيقة", "سكالبينغ 5 دقائق"]
-)
-
-if TIMEFRAME_LABEL == "تحليل يومي":
-    INTERVAL = "1d"
-    PERIOD = "3mo"
-elif TIMEFRAME_LABEL == "مضاربة 15 دقيقة":
-    INTERVAL = "15m"
-    PERIOD = "7d"
-else:
-    INTERVAL = "5m"
-    PERIOD = "7d"
-
-# ================== إدخال الأسهم ==================
-manual = st.text_input(
-    "✍️ أدخل رموز الأسهم (مثال: AAPL,TSLA,NVDA,PLUG)",
-    value="AAPL,NVDA,TSLA"
-)
-
-STOCKS = [s.strip().upper() for s in manual.split(",") if s.strip()]
-
-# ================== دوال ذكية ==================
-def signal_ar(score):
-    if score >= 75:
-        return "🟢 شراء قوي"
-    elif score >= 60:
-        return "🟢 شراء"
-    elif score >= 45:
-        return "🟡 انتظار"
-    else:
-        return "🔴 بيع"
-
-def prediction_ar(score):
-    if score >= 75:
-        return "📈 صعود قوي"
-    elif score >= 60:
-        return "📈 صعود محتمل"
-    elif score >= 45:
-        return "➡️ تذبذب"
-    else:
-        return "📉 هبوط محتمل"
-
-def rsi_state(rsi):
-    if rsi < 30:
-        return "تشبع بيعي"
-    elif rsi > 70:
-        return "تشبع شرائي"
-    else:
-        return "طبيعي"
-
-def entry_type(price, high20, rsi):
-    if price > high20 and rsi > 55:
-        return "🔼 دخول كسر"
-    elif rsi < 30:
-        return "🔁 دخول ارتداد"
-    else:
-        return "—"
+# ================== الأسهم ==================
+STOCKS = [
+    "AAPL","NVDA","TSLA","AMD","PLUG","META","MSFT","AMZN",
+    "GOOGL","NFLX","INTC","BA","COIN","SNAP","NIO",
+    "XPEV","PDD","SOFI","LCID"
+]
 
 # ================== التحليل ==================
-@st.cache_data(ttl=30)
-def analyze_stock(stock):
-    df = yf.download(stock, period=PERIOD, interval=INTERVAL, progress=False)
+def analyze_stock(symbol):
+    try:
+        df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-    if df.empty or len(df) < 30:
+        if df.empty:
+            return None
+
+        close = df["Close"].squeeze()
+
+        rsi = RSIIndicator(close).rsi().iloc[-1]
+        sma = SMAIndicator(close, 20).sma_indicator().iloc[-1]
+        price = close.iloc[-1]
+
+        # الإشارة
+        if rsi < 30:
+            signal = "شراء 🟢"
+            outlook = "متوقع ارتداد صاعد"
+        elif rsi > 70:
+            signal = "بيع 🔴"
+            outlook = "تشبع شرائي واحتمال هبوط"
+        else:
+            signal = "انتظار 🟡"
+            outlook = "حركة جانبية"
+
+        # تقييم ذكي
+        score = round((50 - abs(50 - rsi)) / 10, 2)
+
+        # أهداف
+        target_up = round(price * 1.05, 2)
+        target_down = round(price * 0.95, 2)
+
+        return {
+            "السهم": symbol,
+            "السعر": round(price, 2),
+            "RSI": round(rsi, 2),
+            "المتوسط 20": round(sma, 2),
+            "الإشارة": signal,
+            "التوقع": outlook,
+            "التقييم": score,
+            "هدف صعود": target_up,
+            "هدف هبوط": target_down
+        }
+
+    except Exception:
         return None
 
-    close = df["Close"].squeeze()
-    high = df["High"].squeeze()
-    low = df["Low"].squeeze()
+# ================== تشغيل ==================
+st.title("📊 إشارات الأسهم الذكية")
+st.caption("تحديث تلقائي + تحليل فني + توقع اتجاه")
 
-    price = float(close.iloc[-1])
-    rsi = float(RSIIndicator(close).rsi().iloc[-1])
-    sma = float(SMAIndicator(close, 20).sma_indicator().iloc[-1])
-    atr = float(AverageTrueRange(high, low, close).average_true_range().iloc[-1])
-    high20 = float(df["High"].rolling(20).max().iloc[-1])
-
-    entry = entry_type(price, high20, rsi)
-
-    score = 50
-    score += 25 if rsi < 30 else -15 if rsi > 70 else 0
-    score += 15 if price > sma else -10
-
-    if INTERVAL in ["5m", "15m"]:
-        score *= 0.9
-
-    score = int(max(0, min(100, score)))
-
-    target1 = price + atr
-    target2 = price + atr * 2
-    stop_loss = price - atr * 1.5
-
-    allocation = CAPITAL * RISK_FACTOR * (score / 100)
-    qty = int(allocation / price) if score >= 60 else 0
-
-    return {
-        "السهم": stock,
-        "السعر": round(price, 2),
-        "RSI": round(rsi, 2),
-        "حالة RSI": rsi_state(rsi),
-        "📍 الدخول": entry,
-        "التقييم %": score,
-        "الإشارة": signal_ar(score),
-        "التوقع": prediction_ar(score),
-        "🎯 هدف": round(target2, 2),
-        "🛑 وقف": round(stop_loss, 2),
-        "📦 الكمية": qty
-    }
-
-# ================== التشغيل ==================
-results = []
+data = []
 for s in STOCKS:
-    r = analyze_stock(s)
-    if r:
-        results.append(r)
+    res = analyze_stock(s)
+    if res:
+        data.append(res)
 
-df = pd.DataFrame(results)
-
-st.subheader("📊 النتائج (تحديث فوري)")
+df = pd.DataFrame(data)
 st.dataframe(df, use_container_width=True)
-
-# ================== إشارات ==================
-st.subheader("🚨 إشارات مباشرة")
-for _, row in df.iterrows():
-    if "شراء" in row["الإشارة"]:
-        st.success(
-            f"{row['السهم']} | {row['الإشارة']} | {row['📍 الدخول']} | "
-            f"هدف: {row['🎯 هدف']} | وقف: {row['🛑 وقف']}"
-        )
-    elif "بيع" in row["الإشارة"]:
-        st.error(f"{row['السهم']} | {row['الإشارة']} | خطر")
-    else:
-        st.info(f"{row['السهم']} | {row['الإشارة']} | {row['التوقع']}")
