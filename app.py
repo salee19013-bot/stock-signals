@@ -11,21 +11,20 @@ st.set_page_config(page_title="إشارات الأسهم", layout="wide")
 if "last_refresh" not in st.session_state:
     st.session_state.last_refresh = time.time()
 
-AUTO_REFRESH_SECONDS = 60  # تحديث كل دقيقة
+AUTO_REFRESH_SECONDS = 60
 
 if time.time() - st.session_state.last_refresh > AUTO_REFRESH_SECONDS:
     st.session_state.last_refresh = time.time()
     st.experimental_rerun()
 
-# زر تحديث يدوي
 st.button("🔄 تحديث الآن", on_click=lambda: st.experimental_rerun())
 
-# ================== الأسهم ==================
-STOCKS = [
-    "AAPL","NVDA","TSLA","AMD","PLUG","META","MSFT","AMZN",
-    "GOOGL","NFLX","INTC","BA","COIN","SNAP","NIO",
-    "XPEV","PDD","SOFI","LCID"
-]
+# ================== إدخال المستخدم ==================
+st.subheader("✏️ أدخل اسم السهم")
+user_stock = st.text_input(
+    "مثال: AAPL أو TSLA أو NVDA",
+    value="AAPL"
+).upper().strip()
 
 # ================== التحليل ==================
 def analyze_stock(symbol):
@@ -41,34 +40,28 @@ def analyze_stock(symbol):
         sma = SMAIndicator(close, 20).sma_indicator().iloc[-1]
         price = close.iloc[-1]
 
-        # الإشارة
         if rsi < 30:
             signal = "شراء 🟢"
-            outlook = "متوقع ارتداد صاعد"
+            outlook = "تشبع بيعي واحتمال ارتداد صاعد"
         elif rsi > 70:
             signal = "بيع 🔴"
             outlook = "تشبع شرائي واحتمال هبوط"
         else:
             signal = "انتظار 🟡"
-            outlook = "حركة جانبية"
+            outlook = "حركة عرضية"
 
-        # تقييم ذكي
         score = round((50 - abs(50 - rsi)) / 10, 2)
-
-        # أهداف
-        target_up = round(price * 1.05, 2)
-        target_down = round(price * 0.95, 2)
 
         return {
             "السهم": symbol,
-            "السعر": round(price, 2),
+            "السعر الحالي": round(price, 2),
             "RSI": round(rsi, 2),
             "المتوسط 20": round(sma, 2),
             "الإشارة": signal,
             "التوقع": outlook,
             "التقييم": score,
-            "هدف صعود": target_up,
-            "هدف هبوط": target_down
+            "هدف صعود": round(price * 1.05, 2),
+            "هدف هبوط": round(price * 0.95, 2)
         }
 
     except Exception:
@@ -76,13 +69,12 @@ def analyze_stock(symbol):
 
 # ================== تشغيل ==================
 st.title("📊 إشارات الأسهم الذكية")
-st.caption("تحديث تلقائي + تحليل فني + توقع اتجاه")
 
-data = []
-for s in STOCKS:
-    res = analyze_stock(s)
-    if res:
-        data.append(res)
+if user_stock:
+    result = analyze_stock(user_stock)
 
-df = pd.DataFrame(data)
-st.dataframe(df, use_container_width=True)
+    if result:
+        st.success(f"تم تحليل السهم {user_stock}")
+        st.dataframe(pd.DataFrame([result]), use_container_width=True)
+    else:
+        st.error("❌ السهم غير موجود أو لا توجد بيانات حالياً")
